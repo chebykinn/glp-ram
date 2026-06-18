@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Suspended</title>
+    <style>
+      :root { color-scheme: light dark; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex; align-items: center; justify-content: center;
+        font: 15px/1.5 system-ui, sans-serif;
+        background: Canvas; color: CanvasText;
+      }
+      .card { text-align: center; max-width: 28rem; padding: 2rem; opacity: 0.85; }
+      .title { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.25rem; word-break: break-word; }
+      .url { font-size: 0.8rem; opacity: 0.6; margin: 0 0 1.25rem; word-break: break-all; }
+      button {
+        font: inherit; padding: 0.5rem 1.1rem; border-radius: 8px;
+        border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+        background: transparent; color: inherit; cursor: pointer;
+      }
+      button:hover { background: color-mix(in srgb, CanvasText 8%, transparent); }
+      .hint { font-size: 0.75rem; opacity: 0.5; margin-top: 1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <p class="title" id="title">Suspended tab</p>
+      <p class="url" id="url"></p>
+      <button id="load">Load page</button>
+      <p class="hint">glp-ram deferred this tab to save memory. It loads when you switch to it.</p>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

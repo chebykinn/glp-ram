@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>glp-ram settings</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 14px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+      h1 { font-size: 1.3rem; }
+      fieldset { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 10px; margin: 1rem 0; padding: 1rem 1.25rem; }
+      legend { font-weight: 600; padding: 0 0.4rem; }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; }
+      .row label { flex: 1; }
+      .desc { display: block; font-size: 0.78rem; opacity: 0.6; }
+      input[type="number"] { width: 6rem; }
+      input[type="text"], textarea { width: 100%; box-sizing: border-box; font: inherit; }
+      textarea { min-height: 4.5rem; resize: vertical; }
+      #status { color: seagreen; font-size: 0.85rem; height: 1.2rem; }
+      .num { display: flex; align-items: baseline; gap: 0.4rem; }
+    </style>
+  </head>
+  <body>
+    <h1>glp-ram</h1>
+
+    <div class="row">
+      <label><strong>Enabled</strong><span class="desc">Master switch for all features.</span></label>
+      <input type="checkbox" id="enabled" />
+    </div>
+
+    <fieldset>
+      <legend>Deferred loading</legend>
+      <div class="row">
+        <label>Defer background tabs<span class="desc">New background tabs stay as a placeholder until you switch to them.</span></label>
+        <input type="checkbox" id="deferLoad" />
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Unload idle tabs</legend>
+      <div class="row">
+        <label>Unload (kill) after<span class="desc">Minutes of inactivity before a background tab is discarded.</span></label>
+        <span class="num"><input type="number" id="unloadDelayMin" min="0" step="1" /> min</span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Protection</legend>
+      <div class="row">
+        <label>Audio / video tabs<span class="desc">Never unload tabs playing sound, or with unmuted audio/video you started and paused part-way. Muted background/autoplay video is ignored.</span></label>
+        <input type="checkbox" id="protectAudible" />
+      </div>
+      <div class="row">
+        <label>Mic / camera / screen-share<span class="desc">Never pause/unload tabs capturing A/V.</span></label>
+        <input type="checkbox" id="protectMedia" />
+      </div>
+      <div class="row">
+        <label>Notification tabs<span class="desc">Keep non-push notification tabs loaded (paused) so they keep firing. Push-subscribed tabs unload normally — their notifications survive.</span></label>
+        <input type="checkbox" id="protectNotifications" />
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Notifications</legend>
+      <div class="row">
+        <label>Relay through service worker<span class="desc">Show page notifications via glp-ram's single service worker.</span></label>
+        <input type="checkbox" id="relayNotifications" />
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Out-of-memory guard</legend>
+      <div class="row">
+        <label>Enable OOM guard<span class="desc">Kill (discard) idle tabs under memory pressure. Mic/cam/screen/audio tabs and the active tab are spared.</span></label>
+        <input type="checkbox" id="oomEnabled" />
+      </div>
+      <div class="row">
+        <label>Memory budget<span class="desc">Evict when total tab JS heap (performance.memory) exceeds this. Heaviest-heap tabs killed first.</span></label>
+        <span class="num"><input type="number" id="memoryLimitMB" min="128" step="128" /> MB</span>
+      </div>
+      <div class="row">
+        <label>Min free memory<span class="desc">Safety net (0 = off): also evict when free system memory drops below this. Watches whole-system RAM, so leave at 0 unless you know you want it.</span></label>
+        <span class="num"><input type="number" id="minFreeMemoryMB" min="0" step="128" /> MB</span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Whitelist</legend>
+      <label class="desc">Hostnames never touched by any feature, one per line (e.g. <code>mail.google.com</code>).</label>
+      <textarea id="whitelist" placeholder="example.com&#10;mail.google.com"></textarea>
+    </fieldset>
+
+    <p id="status"></p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

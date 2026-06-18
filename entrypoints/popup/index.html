@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>glp-ram</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 13px/1.45 system-ui, sans-serif; width: 18rem; margin: 0; padding: 0.85rem; }
+      h1 { font-size: 0.95rem; margin: 0 0 0.5rem; display: flex; justify-content: space-between; align-items: center; }
+      .stat { display: flex; justify-content: space-between; padding: 0.15rem 0; }
+      .stat b { font-variant-numeric: tabular-nums; }
+      .sep { height: 1px; background: color-mix(in srgb, CanvasText 15%, transparent); margin: 0.6rem 0; }
+      button { font: inherit; width: 100%; text-align: left; padding: 0.4rem 0.55rem; margin: 0.2rem 0;
+        border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 7px;
+        background: transparent; color: inherit; cursor: pointer; }
+      button:hover { background: color-mix(in srgb, CanvasText 8%, transparent); }
+      .switch { display: flex; align-items: center; gap: 0.4rem; }
+      .muted { opacity: 0.6; }
+      .tag { font-size: 0.72rem; padding: 0.05rem 0.4rem; border-radius: 99px;
+        background: color-mix(in srgb, CanvasText 12%, transparent); }
+    </style>
+  </head>
+  <body>
+    <h1>
+      glp-ram
+      <span class="switch"><input type="checkbox" id="enabled" /><label for="enabled" class="muted">on</label></span>
+    </h1>
+
+    <div class="stat"><span>Tabs managed</span><b id="tabCount">-</b></div>
+    <div class="stat"><span>Deferred / unloaded</span><b id="stateCount">-</b></div>
+    <div class="stat"><span>System memory</span><b id="mem">-</b></div>
+    <div class="stat muted" id="curState"><span>This tab</span><span class="tag" id="curTag">-</span></div>
+
+    <div class="sep"></div>
+
+    <button id="dashboard">Open dashboard</button>
+    <button id="whitelist">Never touch this site</button>
+    <button id="killTab">Kill (unload) this tab now</button>
+    <button id="options">Settings…</button>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

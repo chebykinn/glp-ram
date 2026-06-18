@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>glp-ram dashboard</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body { font: 13px/1.5 system-ui, sans-serif; margin: 0; padding: 1.25rem; }
+      header { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; margin-bottom: 1rem; }
+      h1 { font-size: 1.2rem; margin: 0; }
+      .cards { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-left: auto; }
+      .card { padding: 0.4rem 0.8rem; border-radius: 9px;
+        border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); }
+      .card .k { font-size: 0.72rem; opacity: 0.6; }
+      .card .v { font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .card.warn .v { color: indianred; }
+      label.auto { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; opacity: 0.8; }
+
+      h2 { font-size: 0.95rem; margin: 1.5rem 0 0.5rem; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); vertical-align: top; }
+      th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.6; cursor: pointer; user-select: none; white-space: nowrap; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .title { font-weight: 600; max-width: 26rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .host { opacity: 0.55; font-size: 0.78rem; }
+      .badge { font-size: 0.7rem; padding: 0.05rem 0.45rem; border-radius: 99px; white-space: nowrap;
+        background: color-mix(in srgb, CanvasText 12%, transparent); }
+      .badge.active { background: color-mix(in srgb, seagreen 35%, transparent); }
+      .badge.paused { background: color-mix(in srgb, goldenrod 35%, transparent); }
+      .badge.unloaded { background: color-mix(in srgb, slategray 40%, transparent); }
+      .badge.suspended { background: color-mix(in srgb, steelblue 35%, transparent); }
+      .flags { display: inline-flex; gap: 0.25rem; }
+      .flags span { font-size: 0.72rem; padding: 0.02rem 0.35rem; border-radius: 99px;
+        background: color-mix(in srgb, CanvasText 10%, transparent); cursor: default; }
+      .spared { opacity: 0.55; }
+      .danger { color: indianred; font-weight: 600; }
+      .muted { opacity: 0.55; }
+      .oom { display: inline-block; min-width: 1.6rem; text-align: center; border-radius: 6px; padding: 0 0.35rem; }
+      .oom.hot { background: color-mix(in srgb, indianred 35%, transparent); font-weight: 600; }
+      tbody tr.is-active { background: color-mix(in srgb, seagreen 8%, transparent); }
+      tbody tr.is-discarded { opacity: 0.5; }
+      .note { font-size: 0.78rem; opacity: 0.6; margin: 0.4rem 0 0; }
+      code { background: color-mix(in srgb, CanvasText 10%, transparent); padding: 0 0.25rem; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>glp-ram</h1>
+      <label class="auto"><input type="checkbox" id="auto" checked /> auto-refresh</label>
+      <button id="refresh">Refresh</button>
+      <div class="cards">
+        <div class="card" id="cardTabs"><div class="k">Tabs</div><div class="v" id="vTabs">–</div></div>
+        <div class="card" id="cardMem"><div class="k" id="kMem">Memory</div><div class="v" id="vMem">–</div></div>
+        <div class="card" id="cardBudget"><div class="k" id="kBudget">Threshold</div><div class="v" id="vBudget">–</div></div>
+        <div class="card" id="cardClock"><div class="k">Next OOM check</div><div class="v" id="vClock">–</div></div>
+      </div>
+    </header>
+
+    <h2>Tabs</h2>
+    <table id="tabsTable">
+      <thead>
+        <tr>
+          <th data-sort="title">Tab</th>
+          <th data-sort="state">State</th>
+          <th>Protection</th>
+          <th class="num" data-sort="mem">Memory (JS heap)</th>
+          <th data-sort="alive">Alive for</th>
+          <th class="num" data-sort="oom">OOM rank</th>
+        </tr>
+      </thead>
+      <tbody id="tabsBody"></tbody>
+    </table>
+    <p class="note" id="memNote"></p>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
