@@ -7,11 +7,13 @@
   "scripts": {
     "dev": "wxt",
     "build": "wxt build -b chrome",
+    "crx": "wxt build -b chrome && node scripts/pack-crx.mjs",
     "zip": "wxt zip -b chrome",
     "postinstall": "wxt prepare",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "crx3": "^2.0.0",
     "typescript": "^5.7.0",
     "wxt": "^0.20.0"
   }

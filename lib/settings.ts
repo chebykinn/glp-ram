@@ -13,18 +13,23 @@ export async function saveSettings(patch: Partial<Settings>): Promise<Settings> 
   return next;
 }
 
-/** True if `url`'s hostname is whitelisted (exact or subdomain match). */
-export function isWhitelisted(url: string | undefined, whitelist: string[]): boolean {
-  if (!url) return false;
+/** True if `url`'s hostname matches any entry in `list` (exact or subdomain). */
+export function hostMatches(url: string | undefined, list: string[]): boolean {
+  if (!url || !list.length) return false;
   let host: string;
   try {
     host = new URL(url).hostname;
   } catch {
     return false;
   }
-  return whitelist.some((w) => {
+  return list.some((w) => {
     const entry = w.trim().toLowerCase().replace(/^\*\./, '');
     if (!entry) return false;
     return host === entry || host.endsWith('.' + entry);
   });
+}
+
+/** True if `url`'s hostname is whitelisted (never touched). */
+export function isWhitelisted(url: string | undefined, whitelist: string[]): boolean {
+  return hostMatches(url, whitelist);
 }

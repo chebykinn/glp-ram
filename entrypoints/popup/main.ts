@@ -43,10 +43,10 @@ async function refresh(): Promise<void> {
   if (hasSystemMemoryApi()) {
     const sys = await getSystemMemory();
     $('mem').textContent = sys
-      ? `${mb(sys.availableCapacity)} free / min ${settings.minFreeMemoryMB} MB`
-      : 'n/a';
+      ? `${mb(sys.availableCapacity)} free · keep ${settings.keepLoaded}`
+      : `keep ${settings.keepLoaded}`;
   } else {
-    $('mem').textContent = 'n/a';
+    $('mem').textContent = `keep ${settings.keepLoaded}`;
   }
 
   const [cur] = await browser.tabs.query({ active: true, currentWindow: true });

@@ -26,42 +26,44 @@ export default defineContentScript({
     // textContent (not innerText): layout-independent, so it still works on a
     // backgrounded tab (innerText returns '' without a rendered layout).
     const hasText = (el: Element): boolean => (el.textContent || '').trim() !== '';
+    // Only genuinely editable rich-text counts (a role="textbox" display element
+    // that isn't contenteditable is not user input).
     const editableHasText = (el: Element): boolean =>
-      ((el as HTMLElement).isContentEditable || el.getAttribute('role') === 'textbox') && hasText(el);
+      (el as HTMLElement).isContentEditable && hasText(el);
     const fieldHasValue = (el: Element): boolean => {
-      if (el.tagName === 'INPUT' && SKIP_INPUT_TYPES.has((el as HTMLInputElement).type)) return false;
-      return ((el as HTMLInputElement | HTMLTextAreaElement).value || '').trim() !== '';
+      const f = el as HTMLInputElement & HTMLTextAreaElement;
+      if (f.disabled || f.readOnly) return false; // not user-editable -> ignore
+      if (el.tagName === 'INPUT' && SKIP_INPUT_TYPES.has(f.type)) return false;
+      return (f.value || '').trim() !== '';
     };
 
-    // Walk the light DOM and any open shadow roots. Returns true on first match.
-    function scanRoot(root: Document | ShadowRoot): boolean {
-      for (const el of root.querySelectorAll('input, textarea')) {
-        if (fieldHasValue(el)) return true;
-      }
-      for (const el of root.querySelectorAll('[contenteditable], [role="textbox"]')) {
-        if (editableHasText(el)) return true;
-      }
-      // Descend into open shadow roots.
-      for (const el of root.querySelectorAll('*')) {
-        const sr = (el as HTMLElement).shadowRoot;
-        if (sr && scanRoot(sr)) return true;
+    // Is this element a text-editable field (the only thing whose contents we'd
+    // lose on discard)? Excludes checkboxes/radios/selects/buttons etc.
+    const isTextTarget = (el: Element | null): boolean => {
+      if (!el || el.nodeType !== 1) return false;
+      if (el.tagName === 'TEXTAREA') return true;
+      if (el.tagName === 'INPUT') return !SKIP_INPUT_TYPES.has((el as HTMLInputElement).type);
+      return (el as HTMLElement).isContentEditable;
+    };
+    const targetHasText = (el: Element): boolean =>
+      el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' ? fieldHasValue(el) : editableHasText(el);
+
+    // Protect ONLY fields the user has actually edited (a trusted input/keyup/
+    // paste/change whose target is a text field). A whole-document scan
+    // false-positives on pages that ship pre-filled/readonly fields, search
+    // boxes, or selection checkboxes the user never touched (e.g. apollo.io) —
+    // and clicking a checkbox/row must not count as "edited text".
+    const editedEls = new Set<Element>();
+    function computeHasInput(): boolean {
+      for (const el of editedEls) {
+        if (!el.isConnected) {
+          editedEls.delete(el);
+          continue;
+        }
+        if (targetHasText(el)) return true;
       }
       return false;
     }
-
-    // The currently focused element, piercing shadow roots — catches editors we
-    // can't reach by query (e.g. closed shadow roots) while they're focused.
-    function activeEditableHasText(): boolean {
-      let el: Element | null = document.activeElement;
-      while (el && (el as HTMLElement & { shadowRoot?: ShadowRoot }).shadowRoot?.activeElement) {
-        el = (el as HTMLElement).shadowRoot!.activeElement;
-      }
-      if (!el) return false;
-      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return fieldHasValue(el);
-      return editableHasText(el);
-    }
-
-    const computeHasInput = (): boolean => activeEditableHasText() || scanRoot(document);
 
     let lastHasInput: boolean | undefined;
     let inputTimer: ReturnType<typeof setTimeout> | undefined;
@@ -75,8 +77,15 @@ export default defineContentScript({
       if (inputTimer) clearTimeout(inputTimer);
       inputTimer = setTimeout(reportInput, 400);
     }
+    function onEdit(e: Event): void {
+      // composedPath()[0] pierces open shadow DOM to the real inner target;
+      // e.target is retargeted to the shadow host at the document level.
+      const t = (e.composedPath?.()[0] as Element | undefined) ?? (e.target as Element | null);
+      if (e.isTrusted && isTextTarget(t)) editedEls.add(t!); // real edit of a text field
+      scheduleReport();
+    }
     for (const ev of ['input', 'change', 'keyup', 'paste'] as const) {
-      document.addEventListener(ev, scheduleReport, true);
+      document.addEventListener(ev, onEdit, true);
     }
 
     // ---- playback detection (all frames) ------------------------------------

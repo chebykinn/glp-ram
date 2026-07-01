@@ -1,6 +1,5 @@
 import { getSettings, isWhitelisted } from '@/lib/settings';
-import { isMediaProtected } from '@/lib/policy';
-import { measureTabHeaps, getSystemMemory } from '@/lib/memory';
+import { planKeep } from '@/lib/policy';
 import type { ContentToBackground, Settings, TabInfo } from '@/lib/types';
 
 import type { Tabs, Runtime } from 'webextension-polyfill';
@@ -9,8 +8,8 @@ type Sender = Runtime.MessageSender;
 
 const ALARM = 'glpram-scan';
 const STATE_KEY = 'glpram:tabs';
-const SCAN_KEY = 'glpram:scan'; // { at, periodMs } for the dashboard OOM clock
-// 30s is Chrome's minimum alarm period; fine granularity for idle/OOM checks.
+const SCAN_KEY = 'glpram:scan'; // { at, periodMs } for the dashboard scan clock
+// 30s is Chrome's minimum alarm period; fine granularity for working-set checks.
 const SCAN_PERIOD_MIN = 0.5;
 
 // Fallback notification icon (1x1 transparent PNG) so chrome.notifications never
@@ -80,13 +79,37 @@ async function restoreState(): Promise<void> {
 
 // ---- url helpers ------------------------------------------------------------
 
-/** Only ordinary web pages are managed; never our own pages or chrome://. */
+/**
+ * Only ordinary, fully-formed web pages are managed; never our own pages,
+ * chrome://, or transient/garbage URLs (e.g. a mid-typing omnibox value that
+ * isn't a real URL — suspending those produces broken `xn--…` placeholder
+ * navigations). The URL must parse cleanly as http(s) with a real hostname.
+ */
 function isManageable(url: string | undefined): boolean {
-  if (!url) return false;
-  if (!/^https?:\/\//i.test(url)) return false;
+  if (!url || /\s/.test(url)) return false; // a real URL never contains whitespace
   if (url.startsWith(browser.runtime.getURL(''))) return false;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  // Reject hostnames that aren't real (no dot and not localhost) — these come
+  // from typed search text Chrome hasn't resolved to a navigation yet.
+  if (!u.hostname || (!u.hostname.includes('.') && u.hostname !== 'localhost')) return false;
   return true;
 }
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+// ---- feature 1: defer loading of new background tabs ------------------------
 
 function suspendedUrlFor(url: string, title: string): string {
   return (
@@ -98,40 +121,23 @@ function suspendedUrlFor(url: string, title: string): string {
   );
 }
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
-
-// ---- feature 1: defer loading of background tabs ----------------------------
-
-/** Redirect a background tab to the placeholder, holding the real URL. */
-function suspend(tabId: number, url: string, title: string): void {
-  const info = getInfo(tabId);
-  info.state = 'suspended'; // set before the async update so concurrent events dedupe
-  info.suspendedUrl = url;
-  info.lastActive = now();
-  console.log('[glp-ram] suspending tab', tabId, '->', url);
-  void browser.tabs
-    .update(tabId, { url: suspendedUrlFor(url, title) })
-    .catch((e) => console.warn('[glp-ram] suspend update failed', tabId, e));
-  persistState();
-}
-
+/**
+ * Defer a brand-new BACKGROUND tab by redirecting it to the lightweight
+ * placeholder (a single tabs.update — same tab id, no churn). It loads the real
+ * page when you switch to it. We NEVER discard here (discard reassigns the id
+ * and thrashes) and we only ever touch a fresh, still-loading background tab.
+ */
 function onTabCreated(tab: Tab, settings: Settings): void {
-  const url = tab.pendingUrl || tab.url;
-  console.log('[glp-ram] onCreated id=', tab.id, 'active=', tab.active, 'url=', url,
-    'enabled=', settings.enabled, 'deferLoad=', settings.deferLoad);
   if (!settings.enabled || !settings.deferLoad) return;
-  if (tab.active || tab.id == null) return;
-  if (!isManageable(url) || isWhitelisted(url, settings.whitelist)) {
-    console.log('[glp-ram] onCreated skip: not manageable/whitelisted', url);
-    return;
-  }
-  suspend(tab.id, url!, tab.title || hostOf(url!));
+  if (tab.active || tab.id == null) return; // the foreground tab is never deferred
+  if (tab.discarded) return; // restored / lazy tab — leave it alone
+  if (tab.status === 'complete') return; // already loaded — not a fresh tab
+  if (tabs.get(tab.id)?.everLoaded) return; // we've already let it load
+  const url = tab.pendingUrl || tab.url;
+  if (!isManageable(url) || isWhitelisted(url, settings.whitelist)) return;
+  const info = getInfo(tab.id);
+  info.state = 'suspended';
+  void browser.tabs.update(tab.id, { url: suspendedUrlFor(url!, tab.title || hostOf(url!)) }).catch(() => {});
 }
 
 // ---- the periodic scan ------------------------------------------------------
@@ -141,9 +147,13 @@ async function scan(): Promise<void> {
   if (!settings.enabled) return;
 
   const allTabs = await browser.tabs.query({});
+  // The one true "active" tab: active in the focused window. Only it stays
+  // recency-fresh and is spared as active; background windows' active tabs age.
+  const [focusedTab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+  const focusedId = focusedTab?.id;
   const live = new Set<number>();
-  const unloadMs = settings.unloadDelayMin * 60_000;
   const t = now();
+  const entries: { tab: Tab; info: TabInfo }[] = [];
 
   for (const tab of allTabs) {
     if (tab.id == null) continue;
@@ -151,39 +161,26 @@ async function scan(): Promise<void> {
     if (!isManageable(tab.url)) continue;
 
     const info = getInfo(tab.id);
-    const whitelisted = isWhitelisted(tab.url, settings.whitelist);
-
-    // Active tab: keep its clock fresh.
+    info.focused = tab.id === focusedId;
     if (tab.active) {
-      info.lastActive = t;
+      if (info.focused) info.lastActive = t; // only the focused tab stays fresh
       info.state = tab.discarded ? 'unloaded' : 'active';
       info.everActive = true;
-      continue;
-    }
-
-    // Untouchable tabs: audio/mic/cam/screen, whitelisted, and non-push
-    // notification tabs (must stay loaded to fire notifications). Never unload.
-    const notifHold = settings.protectNotifications && info.notify && !info.push;
-    if (whitelisted || isMediaProtected(tab, info, settings) || notifHold) {
-      info.lastActive = t;
-      continue;
-    }
-
-    if (tab.discarded) {
+    } else if (tab.discarded) {
       info.state = 'unloaded';
-      continue;
     }
-
-    // Unload after the idle timeout, but never a tab with unsaved text.
-    if (t - info.lastActive >= unloadMs && !info.hasInput) {
-      await killTab(tab.id, 'idle');
+    if (!tab.discarded) {
+      info.everLoaded = true; // currently showing real content; never re-suspend it
+      entries.push({ tab, info });
     }
   }
 
   // Drop bookkeeping for tabs that no longer exist.
   for (const id of [...tabs.keys()]) if (!live.has(id)) tabs.delete(id);
 
-  if (settings.oomEnabled) await enforceMemoryLimit(allTabs, settings);
+  // Keep only the most-recently-used tabs loaded; discard (unload) the rest.
+  const plan = planKeep(entries, settings);
+  for (const id of plan.evict) await killTab(id, 'oom');
 
   // Record this sweep so the dashboard can show a countdown to the next one.
   void browser.storage.session
@@ -193,79 +190,8 @@ async function scan(): Promise<void> {
   persistState();
 }
 
-// ---- feature 5: OOM guard ---------------------------------------------------
-
-/** Tabs that may be killed under memory pressure: not active, not media, not whitelisted. */
-function oomCandidates(allTabs: Tab[], settings: Settings): Tab[] {
-  return allTabs.filter((tab) => {
-    if (tab.id == null || tab.discarded || !isManageable(tab.url)) return false;
-    if (tab.active) return false;
-    if (isWhitelisted(tab.url, settings.whitelist)) return false;
-    const info = getInfo(tab.id);
-    if (info.hasInput) return false; // never discard a tab with unsaved text
-    return !isMediaProtected(tab, info, settings);
-  });
-}
-
-async function enforceMemoryLimit(allTabs: Tab[], settings: Settings): Promise<void> {
-  const candidates = oomCandidates(allTabs, settings);
-  if (candidates.length === 0) return;
-
-  // Per-tab memory on stable = JS heap (performance.memory). Measure all live
-  // managed tabs for the total-heap budget, then evict only eligible candidates.
-  const liveManaged = allTabs.filter((t) => t.id != null && !t.discarded && isManageable(t.url));
-  const heaps = await measureTabHeaps(liveManaged.map((t) => t.id!));
-  let totalHeap = 0;
-  for (const v of heaps.values()) totalHeap += v;
-
-  const budgetBytes = settings.memoryLimitMB * 1024 * 1024;
-  const minFreeBytes = settings.minFreeMemoryMB * 1024 * 1024;
-  const sys = await getSystemMemory();
-  // minFreeMemoryMB <= 0 disables the system-free safety net.
-  const lowFree = settings.minFreeMemoryMB > 0 && !!sys && sys.availableCapacity < minFreeBytes;
-
-  // Trigger if total tab heap is over budget, OR free system memory is low.
-  if (totalHeap <= budgetBytes && !lowFree) return;
-  console.log(
-    '[glp-ram] OOM triggered — totalHeap=',
-    Math.round(totalHeap / 1048576),
-    'MB / budget',
-    settings.memoryLimitMB,
-    'MB; free=',
-    sys ? Math.round(sys.availableCapacity / 1048576) : 'n/a',
-    'MB / min',
-    settings.minFreeMemoryMB,
-    'MB',
-  );
-
-  // Heaviest heap first; tie-break longest idle. Cap kills per scan so a stale
-  // system-memory reading can't cascade into evicting everything.
-  const victims = [...candidates].sort(
-    (a, b) =>
-      (heaps.get(b.id!) || 0) - (heaps.get(a.id!) || 0) ||
-      getInfo(a.id!).lastActive - getInfo(b.id!).lastActive,
-  );
-  const MAX_PER_SCAN = 5;
-  let killed = 0;
-  let freed = 0;
-  for (const tab of victims) {
-    if (killed >= MAX_PER_SCAN) break;
-    const overBudget = totalHeap - freed > budgetBytes;
-    let stillLow = false;
-    if (lowFree) {
-      const cur = await getSystemMemory();
-      stillLow = !!cur && cur.availableCapacity < minFreeBytes;
-    }
-    if (!overBudget && !stillLow) break;
-    if (await killTab(tab.id!, 'oom')) {
-      killed++;
-      freed += heaps.get(tab.id!) || 0;
-    }
-  }
-}
-
 /** Discard a tab's renderer process ("kill"); never closes it. Returns success. */
-async function killTab(tabId: number, reason: 'idle' | 'oom'): Promise<boolean> {
+async function killTab(tabId: number, reason: 'oom' | 'manual'): Promise<boolean> {
   try {
     // discard() may return the tab with a NEW id — record the reason on that id.
     const discarded = await browser.tabs.discard(tabId);
@@ -293,6 +219,12 @@ async function handleMessage(
   message: ContentToBackground,
   sender: Sender,
 ): Promise<void> {
+  // Manual kill from the dashboard/popup carries its own tabId (no sender.tab).
+  if (message.type === 'KILL_TAB') {
+    await killTab(message.tabId, 'manual');
+    return;
+  }
+
   const tabId = sender.tab?.id;
   if (tabId == null) return;
   const info = getInfo(tabId);
@@ -368,7 +300,10 @@ async function injectIntoOpenTabs(): Promise<void> {
   const open = await browser.tabs.query({});
   for (const tab of open) {
     if (tab.id == null || !isManageable(tab.url) || tab.discarded) continue;
-    getInfo(tab.id).lastActive = now();
+    // Ensure the tab is tracked, but keep its restored recency — clobbering
+    // lastActive here would reset the working-set order on every SW restart.
+    const info = getInfo(tab.id);
+    if (tab.active) info.lastActive = now();
     try {
       await browser.scripting.executeScript({
         target: { tabId: tab.id },
@@ -388,14 +323,15 @@ async function injectIntoOpenTabs(): Promise<void> {
 
 export default defineBackground(() => {
   console.log('[glp-ram] background service worker started');
-  void restoreState().then(() => injectIntoOpenTabs());
-
-  // Prime + keep the settings cache fresh (used for synchronous deferral).
-  void getSettings().then((s) => {
-    settingsCache = s;
-    console.log('[glp-ram] settings loaded: enabled=', s.enabled, 'deferLoad=', s.deferLoad);
+  void restoreState().then(async () => {
+    await injectIntoOpenTabs();
+    await scan(); // populate the working set + scan clock immediately, not after ~30s
   });
-  browser.storage.onChanged.addListener((_changes, area) => {
+
+  // Keep settings cached so onCreated can defer synchronously (the MV3 worker
+  // can drop an awaited getSettings mid-event).
+  void getSettings().then((s) => (settingsCache = s));
+  browser.storage.onChanged.addListener((_c, area) => {
     if (area === 'sync') void getSettings().then((s) => (settingsCache = s));
   });
 
@@ -404,33 +340,56 @@ export default defineBackground(() => {
     if (alarm.name === ALARM) void scan();
   });
 
+  // Defer new background tabs to the placeholder (feature 1).
   browser.tabs.onCreated.addListener((tab) => {
     if (settingsCache) onTabCreated(tab, settingsCache);
     else void getSettings().then((s) => onTabCreated(tab, s));
   });
 
+  // Fallback: tabs opened in another window or via window.open fire onCreated
+  // BEFORE their URL is known, so onCreated can't defer them. Catch them on
+  // their first 'loading' tick instead. Suspend only (no discard), and never
+  // touch a tab that has already loaded real content or is already a placeholder.
+  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status !== 'loading') return;
+    const s = settingsCache;
+    if (!s || !s.enabled || !s.deferLoad) return;
+    if (tab.active || tab.discarded) return;
+    const info = getInfo(tabId);
+    if (info.everLoaded || info.state === 'suspended') return; // loaded / already deferred
+    const url = changeInfo.url || tab.pendingUrl || tab.url;
+    if (!isManageable(url) || isWhitelisted(url, s.whitelist)) return;
+    info.state = 'suspended';
+    void browser.tabs
+      .update(tabId, { url: suspendedUrlFor(url!, tab.title || hostOf(url!)) })
+      .catch(() => {});
+  });
+
   browser.tabs.onActivated.addListener(({ tabId }) => {
+    for (const [id, i] of tabs) if (id !== tabId) i.focused = false; // single focused tab
     const info = getInfo(tabId);
     info.lastActive = now();
     info.state = 'active';
     info.everActive = true;
+    info.everLoaded = true; // it's showing real content now; never re-suspend it
+    info.focused = true;
     info.unloadReason = undefined; // reloads on activation; clear the kill reason
     persistState();
   });
 
-  // Fallback deferral: some background tabs (opened in another window, via
-  // window.open, or by another app) fire onCreated before their URL is known, so
-  // catch them when they start loading — but only tabs the user has never viewed.
-  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status !== 'loading') return;
-    const s = settingsCache;
-    if (!s || !s.enabled || !s.deferLoad || tab.active) return;
-    const info = getInfo(tabId);
-    if (info.everActive || info.state === 'suspended') return;
-    const url = changeInfo.url || tab.pendingUrl || tab.url;
-    if (!isManageable(url) || isWhitelisted(url, s.whitelist)) return;
-    console.log('[glp-ram] onUpdated defer id=', tabId, 'url=', url);
-    suspend(tabId, url!, tab.title || hostOf(url!));
+  // Switching windows doesn't fire onActivated — track the focused window's
+  // active tab so background windows' active tabs stop counting as "active".
+  browser.windows.onFocusChanged.addListener((windowId) => {
+    void browser.tabs.query({ active: true, windowId }).then(([tab]) => {
+      const fid = tab?.id;
+      for (const [id, i] of tabs) i.focused = id === fid;
+      if (fid != null) {
+        const info = getInfo(fid);
+        info.lastActive = now();
+        info.everActive = true;
+      }
+      persistState();
+    });
   });
 
   browser.tabs.onRemoved.addListener((tabId) => {

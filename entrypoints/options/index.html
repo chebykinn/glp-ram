@@ -37,10 +37,10 @@
     </fieldset>
 
     <fieldset>
-      <legend>Unload idle tabs</legend>
+      <legend>Working set</legend>
       <div class="row">
-        <label>Unload (kill) after<span class="desc">Minutes of inactivity before a background tab is discarded.</span></label>
-        <span class="num"><input type="number" id="unloadDelayMin" min="0" step="1" /> min</span>
+        <label>Keep loaded<span class="desc">How many tabs stay loaded at once — the active tab, the previous tab, and a freshly-opened background tab. Everything else is discarded. Protected tabs (media, unsaved input, non-push notifications) are kept on top of this.</span></label>
+        <span class="num"><input type="number" id="keepLoaded" min="1" step="1" /> tabs</span>
       </div>
     </fieldset>
 
@@ -69,25 +69,15 @@
     </fieldset>
 
     <fieldset>
-      <legend>Out-of-memory guard</legend>
-      <div class="row">
-        <label>Enable OOM guard<span class="desc">Kill (discard) idle tabs under memory pressure. Mic/cam/screen/audio tabs and the active tab are spared.</span></label>
-        <input type="checkbox" id="oomEnabled" />
-      </div>
-      <div class="row">
-        <label>Memory budget<span class="desc">Evict when total tab JS heap (performance.memory) exceeds this. Heaviest-heap tabs killed first.</span></label>
-        <span class="num"><input type="number" id="memoryLimitMB" min="128" step="128" /> MB</span>
-      </div>
-      <div class="row">
-        <label>Min free memory<span class="desc">Safety net (0 = off): also evict when free system memory drops below this. Watches whole-system RAM, so leave at 0 unless you know you want it.</span></label>
-        <span class="num"><input type="number" id="minFreeMemoryMB" min="0" step="128" /> MB</span>
-      </div>
-    </fieldset>
-
-    <fieldset>
       <legend>Whitelist</legend>
       <label class="desc">Hostnames never touched by any feature, one per line (e.g. <code>mail.google.com</code>).</label>
       <textarea id="whitelist" placeholder="example.com&#10;mail.google.com"></textarea>
+    </fieldset>
+
+    <fieldset>
+      <legend>Always-unload</legend>
+      <label class="desc">Hostnames always unloaded when inactive — bypasses every protection (media, audio, notifications, unsaved input). One per line. Takes precedence over the whitelist. The active tab is never unloaded.</label>
+      <textarea id="alwaysUnload" placeholder="apollo.io&#10;news.example.com"></textarea>
     </fieldset>
 
     <p id="status"></p>

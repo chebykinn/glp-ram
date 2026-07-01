@@ -41,6 +41,12 @@
       .oom.hot { background: color-mix(in srgb, indianred 35%, transparent); font-weight: 600; }
       tbody tr.is-active { background: color-mix(in srgb, seagreen 8%, transparent); }
       tbody tr.is-discarded { opacity: 0.5; }
+      button.kill { font: inherit; font-size: 0.75rem; padding: 0.15rem 0.6rem; border-radius: 6px; cursor: pointer;
+        border: 1px solid color-mix(in srgb, indianred 50%, transparent);
+        background: color-mix(in srgb, indianred 14%, transparent); color: inherit; }
+      button.kill:hover { background: color-mix(in srgb, indianred 28%, transparent); }
+      button.kill:disabled { opacity: 0.35; cursor: default; border-color: color-mix(in srgb, CanvasText 18%, transparent);
+        background: transparent; }
       .note { font-size: 0.78rem; opacity: 0.6; margin: 0.4rem 0 0; }
       code { background: color-mix(in srgb, CanvasText 10%, transparent); padding: 0 0.25rem; border-radius: 4px; }
     </style>
@@ -54,7 +60,7 @@
         <div class="card" id="cardTabs"><div class="k">Tabs</div><div class="v" id="vTabs">–</div></div>
         <div class="card" id="cardMem"><div class="k" id="kMem">Memory</div><div class="v" id="vMem">–</div></div>
         <div class="card" id="cardBudget"><div class="k" id="kBudget">Threshold</div><div class="v" id="vBudget">–</div></div>
-        <div class="card" id="cardClock"><div class="k">Next OOM check</div><div class="v" id="vClock">–</div></div>
+        <div class="card" id="cardClock"><div class="k">Next scan</div><div class="v" id="vClock">–</div></div>
       </div>
     </header>
 
@@ -66,8 +72,9 @@
           <th data-sort="state">State</th>
           <th>Protection</th>
           <th class="num" data-sort="mem">Memory (JS heap)</th>
-          <th data-sort="alive">Alive for</th>
-          <th class="num" data-sort="oom">OOM rank</th>
+          <th data-sort="status">Status</th>
+          <th class="num" data-sort="keep">Keep order</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="tabsBody"></tbody>

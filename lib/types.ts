@@ -9,9 +9,14 @@ export interface Settings {
   /** Redirect background-opened tabs to a placeholder until they're activated. */
   deferLoad: boolean;
 
-  // ---- Feature 2: unload idle tabs -----------------------------------------
-  /** Minutes of inactivity before a tab is unloaded (discarded). */
-  unloadDelayMin: number;
+  // ---- Feature 2: keep-loaded working set ----------------------------------
+  /**
+   * How many tabs to keep loaded at once (the working set). The most-recently
+   * used tabs — the active tab, the previous tab, and a freshly-opened
+   * background tab — stay loaded; everything else is discarded. Protected tabs
+   * (media / unsaved input / non-push notifications) are kept on top of this.
+   */
+  keepLoaded: number;
 
   // ---- Feature 3: protection ----------------------------------------------
   /** Never pause/unload tabs that are producing sound. */
@@ -25,38 +30,26 @@ export interface Settings {
   /** Route page `new Notification(...)` through our single service worker. */
   relayNotifications: boolean;
 
-  // ---- Feature 5: OOM guard ------------------------------------------------
-  /** Kill (discard) idle tabs under memory pressure. */
-  oomEnabled: boolean;
-  /**
-   * Memory budget in MB. Evict when the total tab JS heap (summed
-   * performance.memory) exceeds this. Heaviest-heap eligible tabs killed first.
-   */
-  memoryLimitMB: number;
-  /**
-   * Safety net (0 = off): also evict when free system memory
-   * (chrome.system.memory) drops below this many MB, regardless of the budget.
-   * Off by default — it evicts based on whole-system RAM, which is mostly other
-   * apps, so killing tabs rarely helps.
-   */
-  minFreeMemoryMB: number;
-
   /** Hostnames that are never touched by any feature. */
   whitelist: string[];
+  /**
+   * Hostnames always eligible to be unloaded/OOM-killed when inactive —
+   * bypasses every protection (media, audio, notifications, unsaved input).
+   * The active tab is still never unloaded. Takes precedence over the whitelist.
+   */
+  alwaysUnload: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   deferLoad: true,
-  unloadDelayMin: 30,
+  keepLoaded: 3,
   protectAudible: true,
   protectMedia: true,
   protectNotifications: true,
   relayNotifications: true,
-  oomEnabled: true,
-  memoryLimitMB: 1536,
-  minFreeMemoryMB: 0,
   whitelist: [],
+  alwaysUnload: [],
 };
 
 /** Live, rebuildable per-tab bookkeeping. Mirrored to chrome.storage.session. */
@@ -79,9 +72,18 @@ export interface TabInfo {
   /** Per-frame playback state (frameId -> true); hasPlayback = any true. */
   playbackFrames?: Record<number, true>;
   /** Why this tab was unloaded, when state === 'unloaded'. */
-  unloadReason?: 'idle' | 'oom';
+  unloadReason?: 'oom' | 'manual';
+  /** Is this the active tab of the currently FOCUSED window? (the one true "active") */
+  focused?: boolean;
   /** Has this tab ever been the active/foreground tab? (gates deferred loading) */
   everActive?: boolean;
+  /**
+   * Has this tab ever loaded real content (vs. only ever been a placeholder)?
+   * Once true, the tab is never auto-suspended again — deferral only ever
+   * applies to a tab's very first navigation, never to in-page reloads of a
+   * page that's already loaded.
+   */
+  everLoaded?: boolean;
   /** When suspended, the real URL we deferred. */
   suspendedUrl?: string;
 }
@@ -94,6 +96,7 @@ export type ContentToBackground =
   | { type: 'PUSH_STATE'; active: boolean }
   | { type: 'INPUT_STATE'; hasInput: boolean }
   | { type: 'PLAYBACK_STATE'; active: boolean }
+  | { type: 'KILL_TAB'; tabId: number }
   | {
       type: 'SHOW_NOTIFICATION';
       title: string;
