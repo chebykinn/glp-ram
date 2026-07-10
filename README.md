@@ -1,6 +1,14 @@
+<p align="center">
+  <img src="assets/glp-ram-icon.svg" alt="glp-ram icon" width="128" height="128" />
+</p>
+
 # glp-ram
 
-A Chrome (MV3) extension that takes over tab memory management and loading.
+A Chrome (MV3) extension that takes over tab memory management and loading. It
+keeps only a small working set of tabs loaded — the focused tab plus your most
+recently used ones — and unloads the rest to free RAM, while never touching tabs
+that play media, use the mic/camera, hold unsaved text, or fire notifications.
+New background tabs are deferred to a placeholder until you actually open them.
 
 ## What it does
 
