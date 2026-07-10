@@ -40,7 +40,18 @@ export default defineConfig({
     version: '0.1.0',
     permissions: ['tabs', 'scripting', 'alarms', 'storage', 'notifications', 'system.memory'],
     host_permissions: ['<all_urls>'],
-    action: { default_title: 'glp-ram' },
+    // Icons (generated from assets/glp-ram-icon.svg via `bun run icons` into
+    // public/icon/). Used for the toolbar action, extensions page, and store.
+    icons: {
+      16: 'icon/16.png',
+      32: 'icon/32.png',
+      48: 'icon/48.png',
+      128: 'icon/128.png',
+    },
+    action: {
+      default_title: 'glp-ram',
+      default_icon: { 16: 'icon/16.png', 32: 'icon/32.png' },
+    },
     // "split": run a separate instance inside Incognito so our placeholder page
     // can render in Incognito tabs (spanning mode forbids extension pages there).
     // Settings (synced storage) are shared; per-tab state stays per-profile.

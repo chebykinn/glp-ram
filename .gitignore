@@ -5,3 +5,4 @@ node_modules
 stats.html
 key.pem
 *.crx
+.DS_Store
