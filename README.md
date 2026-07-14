@@ -4,6 +4,8 @@
 
 # glp-ram
 
+[**Install from the Chrome Web Store →**](https://chromewebstore.google.com/detail/glp-ram/aaphgiadoaoofglkffofblcefdnnnjhn)
+
 A Chrome (MV3) extension that takes over tab memory management and loading. It
 keeps only a small working set of tabs loaded — the focused tab plus your most
 recently used ones — and unloads the rest to free RAM, while never touching tabs
